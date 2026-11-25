@@ -1,4 +1,4 @@
-const CACHE_NAME = "optician-pwa-v6";
+const CACHE_NAME = "optician-pwa-v7";
 const CORE_ASSETS = [
   "./",
   "./index.html",

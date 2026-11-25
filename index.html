@@ -1912,7 +1912,7 @@ const TUTOR = {key:null, turns:[], busy:false, ctl:null, pending:"", off:false, 
 let TUTOR_AT = null;          // tutor opened outside the quiz: {kind:"tip", id} or {kind:"lec", id, sel}
 const TIERS = window.WEB
   ? [{id:"quick", label:"빠르게", model:"Haiku"}, {id:"default", label:"보통", model:"Sonnet"}, {id:"complex", label:"정밀하게", model:"Opus"}]
-  : [{id:"quick", label:"빠르게", model:"4 Hydrogen", api:"gemini-4-hydrogen", fb:["gemini-3.5-flash-lite"]}, {id:"default", label:"심층", model:"4 Neon", api:"gemini-4-neon", fb:["gemini-4-argon", "gemini-4-hydrogen"]}, {id:"complex", label:"정밀하게", model:"4 Carbon", api:"gemini-4-carbon", fb:["gemini-4-neon", "gemini-4-argon", "gemini-4-hydrogen"]}];
+  : [{id:"quick", label:"빠르게", model:"4 Hydrogen", api:"gemini-4-hydrogen", fb:["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]}, {id:"default", label:"심층", model:"4 Neon", api:"gemini-4-neon", fb:["gemini-4-hydrogen", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]}, {id:"complex", label:"정밀하게", model:"4 Carbon", api:"gemini-4-carbon", fb:["gemini-4-neon", "gemini-4-hydrogen", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]}];
 const tierInfo = id => TIERS.find(t=>t.id===id) || TIERS[1];
 const tierModel = id => tierInfo(id).model;
 let TUTOR_TIER = window.WEB ? "default" : "quick";
