@@ -1,4 +1,4 @@
-const CACHE_NAME = "optician-pwa-v1";
+const CACHE_NAME = "optician-pwa-v4";
 const CORE_ASSETS = [
   "./",
   "./index.html",
@@ -30,8 +30,8 @@ self.addEventListener("fetch", event => {
 
   const url = new URL(req.url);
 
-  // Never cache AI API calls
-  if (url.hostname === "generativelanguage.googleapis.com") return;
+  // Never cache AI API or Supabase cloud sync calls
+  if (url.hostname === "generativelanguage.googleapis.com" || url.hostname.endsWith(".supabase.co")) return;
 
   // Stale-While-Revalidate for Google Fonts
   if (url.hostname === "fonts.googleapis.com" || url.hostname === "fonts.gstatic.com") {
