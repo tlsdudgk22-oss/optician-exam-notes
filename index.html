@@ -1912,7 +1912,7 @@ const TUTOR = {key:null, turns:[], busy:false, ctl:null, pending:"", off:false, 
 let TUTOR_AT = null;          // tutor opened outside the quiz: {kind:"tip", id} or {kind:"lec", id, sel}
 const TIERS = window.WEB
   ? [{id:"quick", label:"빠르게", model:"Haiku"}, {id:"default", label:"보통", model:"Sonnet"}, {id:"complex", label:"정밀하게", model:"Opus"}]
-  : [{id:"quick", label:"빠르게", model:"3.5 Flash-Lite", api:"gemini-3.5-flash-lite"}, {id:"default", label:"보통", model:"4 Hydrogen", api:"gemini-4-hydrogen"}, {id:"complex", label:"정밀하게", model:"4 Argon", api:"gemini-4-argon"}];
+  : [{id:"quick", label:"빠르게", model:"4 Hydrogen", api:"gemini-4-hydrogen", fb:["gemini-3.5-flash-lite"]}, {id:"default", label:"심층", model:"4 Neon", api:"gemini-4-neon", fb:["gemini-4-argon", "gemini-4-hydrogen"]}, {id:"complex", label:"정밀하게", model:"4 Carbon", api:"gemini-4-carbon", fb:["gemini-4-neon", "gemini-4-argon", "gemini-4-hydrogen"]}];
 const tierInfo = id => TIERS.find(t=>t.id===id) || TIERS[1];
 const tierModel = id => tierInfo(id).model;
 let TUTOR_TIER = "default";
@@ -2072,7 +2072,7 @@ function renderTutor(){
     ${T.sel ? `<div class="tsel">“${esc(T.sel.length > 160 ? T.sel.slice(0, 160) + "…" : T.sel)}”</div>` : ""}
     ${TUTOR.drill && !TUTOR.busy ? `<div class="tnote">연습 문제의 답을 골라 보세요. 고르기 전엔 정답을 알려주지 않아요.</div>` : ""}
     <div class="tchips ${TUTOR.drill?"drill":""}">${chips.map(c=>`<button type="button" ${TUTOR.busy||!hasKey?"disabled":""} data-q="${esc(c.q)}">${esc(c.label)}</button>`).join("")}</div>
-    <div class="tlog">${TUTOR.turns.map(t=>t.role==="user"?`<div class="tmsg u">${esc(t.content)}</div>`:`<div class="trow"><img class="tavatar" src="fig/tutor_avatar.png" alt=""><div class="tcol"><div class="tmsg a">${fmtTutor(t.content)}</div>${t.tier?`<span class="tby">${tierModel(t.tier)} 답변${t.req && t.req!==t.tier?` · 요청한 ${tierModel(t.req)} 대신 요금제에 맞춰 자동 선택`:""}</span>`:""}</div></div>`).join("")}
+    <div class="tlog">${TUTOR.turns.map(t=>t.role==="user"?`<div class="tmsg u">${esc(t.content)}</div>`:`<div class="trow"><img class="tavatar" src="fig/tutor_avatar.png" alt=""><div class="tcol"><div class="tmsg a">${fmtTutor(t.content)}</div>${t.tier?`<span class="tby">${t.used ? esc(t.used) : tierModel(t.tier)} 답변${t.req && t.req!==t.tier?` · 요청한 ${tierModel(t.req)} 대신 요금제에 맞춰 자동 선택`:""}</span>`:""}</div></div>`).join("")}
       ${TUTOR.busy?`<div class="trow"><img class="tavatar" src="fig/tutor_avatar.png" alt=""><div class="tmsg a ${TUTOR.pending?"":"wait"}" id="tutorPending">${TUTOR.pending?fmtTutor(TUTOR.pending):"생각하는 중…"}</div></div>`:""}
       ${TUTOR.err?`<div class="tnote" style="color:var(--bad)">${esc(TUTOR.err)}</div>`:""}</div>
     <div class="tinput"><textarea id="tutorBox" rows="2" ${!hasKey?"disabled":""} placeholder="${!hasKey ? "위에서 Gemini API 키를 먼저 저장해 주세요" : (q ? "이 문제" : T.kind === "tip" ? "이 비법" : T.sel ? "고른 부분" : "이 강의") + "에 대해 무엇이든 물어보세요 (Enter 전송, Shift+Enter 줄바꿈)"}"></textarea>
@@ -2103,20 +2103,26 @@ async function geminiSample(systemInstruction, userText, opts){
   const key = getGeminiKey();
   if(!key) throw Object.assign(new Error("missing key"), {code:"invalid_key"});
   if(typeof navigator !== "undefined" && navigator.onLine === false) throw Object.assign(new Error("offline"), {code:"offline"});
-  const model = tierInfo(opts.modelTier).api || "gemini-4-hydrogen";
-  const body = {model, system_instruction: systemInstruction, input: userText, stream: true};
-  if(opts.prevId) body.previous_interaction_id = opts.prevId;
-  let resp;
-  try{
-    resp = await fetch("https://generativelanguage.googleapis.com/v1/interactions?alt=sse", {
-      method: "POST",
-      headers: {"Content-Type": "application/json", "x-goog-api-key": key},
-      body: JSON.stringify(body),
-      signal: opts.signal,
-    });
-  }catch(e){
-    if(e && e.name === "AbortError") throw Object.assign(new Error("cancelled"), {code:"cancelled"});
-    throw e;
+  const tier = tierInfo(opts.modelTier);
+  // try the chosen model first; if this key can't use it (404/403, e.g. paid-tier only), step down to the next one
+  const candidates = [...new Set([tier.api || "gemini-4-hydrogen", ...(tier.fb || [])])];
+  let resp, usedModel = candidates[0];
+  for(let ci = 0; ci < candidates.length; ci++){
+    usedModel = candidates[ci];
+    const body = {model: usedModel, system_instruction: systemInstruction, input: userText, stream: true};
+    if(opts.prevId) body.previous_interaction_id = opts.prevId;
+    try{
+      resp = await fetch("https://generativelanguage.googleapis.com/v1/interactions?alt=sse", {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "x-goog-api-key": key},
+        body: JSON.stringify(body),
+        signal: opts.signal,
+      });
+    }catch(e){
+      if(e && e.name === "AbortError") throw Object.assign(new Error("cancelled"), {code:"cancelled"});
+      throw e;
+    }
+    if(resp.ok || !(resp.status === 404 || resp.status === 403) || ci === candidates.length - 1) break;
   }
   if(!resp.ok){
     const st = resp.status;
@@ -2154,7 +2160,7 @@ async function geminiSample(systemInstruction, userText, opts){
     throw e;
   }
   if(!acc.trim()) throw Object.assign(new Error("empty"), {code:"empty_completion"});
-  return {text: acc, truncated, modelTierApplied: opts.modelTier, interactionId: iid};
+  return {text: acc, truncated, modelTierApplied: opts.modelTier, interactionId: iid, usedModel};
 }
 async function askTutor(text){
   text = (text||"").trim();
@@ -2190,7 +2196,7 @@ async function askTutor(text){
       if(r.interactionId) TUTOR.iid = r.interactionId;
     }
     if(TUTOR.key !== myQ) return;
-    TUTOR.turns.push({role:"assistant", content: r.text + (r.truncated ? "\n(답변이 길어서 중간에 끊겼어요. 나눠서 물어봐 주세요.)" : ""), tier:r.modelTierApplied||asked, req:asked});
+    TUTOR.turns.push({role:"assistant", content: r.text + (r.truncated ? "\n(답변이 길어서 중간에 끊겼어요. 나눠서 물어봐 주세요.)" : ""), tier:r.modelTierApplied||asked, req:asked, used:r.usedModel||""});
     TUTOR.drill = startsDrill;
   }catch(e){
     if(TUTOR.key !== myQ) return;
