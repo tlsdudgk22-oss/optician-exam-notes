@@ -1,6 +1,6 @@
 {
-  "name": "안경사 국시 강의노트",
-  "short_name": "안경사 국시",
+  "name": "안경사 강의노트",
+  "short_name": "안경사",
   "description": "안경사 국가시험 기출 1,000문항·예상문제·개념강의·풀이비법·계산드릴·AI 튜터",
   "start_url": "./index.html",
   "scope": "./",
