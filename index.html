@@ -1915,7 +1915,7 @@ const TIERS = window.WEB
   : [{id:"quick", label:"빠르게", model:"4 Hydrogen", api:"gemini-4-hydrogen", fb:["gemini-3.5-flash-lite"]}, {id:"default", label:"심층", model:"4 Neon", api:"gemini-4-neon", fb:["gemini-4-argon", "gemini-4-hydrogen"]}, {id:"complex", label:"정밀하게", model:"4 Carbon", api:"gemini-4-carbon", fb:["gemini-4-neon", "gemini-4-argon", "gemini-4-hydrogen"]}];
 const tierInfo = id => TIERS.find(t=>t.id===id) || TIERS[1];
 const tierModel = id => tierInfo(id).model;
-let TUTOR_TIER = "default";
+let TUTOR_TIER = window.WEB ? "default" : "quick";
 try{ const t = localStorage.getItem("optician-tutor-tier"); if(TIERS.some(x=>x.id===t)) TUTOR_TIER = t; }catch(e){}
 function setTier(id){ TUTOR_TIER = id; try{ localStorage.setItem("optician-tutor-tier", id); }catch(e){} renderTutor(); }
 const GEMINI_KEY_STORAGE = "optician-gemini-key";
@@ -2104,59 +2104,84 @@ async function geminiSample(systemInstruction, userText, opts){
   if(!key) throw Object.assign(new Error("missing key"), {code:"invalid_key"});
   if(typeof navigator !== "undefined" && navigator.onLine === false) throw Object.assign(new Error("offline"), {code:"offline"});
   const tier = tierInfo(opts.modelTier);
-  // try the chosen model first; if this key can't use it (404/403, e.g. paid-tier only), step down to the next one
   const candidates = [...new Set([tier.api || "gemini-4-hydrogen", ...(tier.fb || [])])];
-  let resp, usedModel = candidates[0];
+  const sleep = ms => new Promise((res, rej)=>{
+    const id = setTimeout(res, ms);
+    if(opts.signal) opts.signal.addEventListener("abort", ()=>{ clearTimeout(id); rej(Object.assign(new Error("cancelled"), {code:"cancelled"})); }, {once:true});
+  });
+
+  let resp = null, usedModel = candidates[0], prevId = opts.prevId || null, lastErrDetail = "";
   for(let ci = 0; ci < candidates.length; ci++){
     usedModel = candidates[ci];
-    const body = {model: usedModel, system_instruction: systemInstruction, input: userText, stream: true};
-    if(opts.prevId) body.previous_interaction_id = opts.prevId;
-    try{
-      resp = await fetch("https://generativelanguage.googleapis.com/v1/interactions?alt=sse", {
-        method: "POST",
-        headers: {"Content-Type": "application/json", "x-goog-api-key": key},
-        body: JSON.stringify(body),
-        signal: opts.signal,
-      });
-    }catch(e){
-      if(e && e.name === "AbortError") throw Object.assign(new Error("cancelled"), {code:"cancelled"});
-      throw e;
+    for(let attempt = 0; attempt < 2; attempt++){
+      const body = {model: usedModel, system_instruction: systemInstruction, input: userText, stream: true};
+      if(prevId) body.previous_interaction_id = prevId;
+      try{
+        resp = await fetch("https://generativelanguage.googleapis.com/v1/interactions?alt=sse", {
+          method: "POST",
+          headers: {"Content-Type": "application/json", "x-goog-api-key": key},
+          body: JSON.stringify(body),
+          signal: opts.signal,
+        });
+      }catch(e){
+        if(e && (e.name === "AbortError" || e.code === "cancelled")) throw Object.assign(new Error("cancelled"), {code:"cancelled"});
+        lastErrDetail = "네트워크 응답 없음";
+        if(attempt === 0){ await sleep(700); continue; }
+        resp = null; break;
+      }
+      if(resp.ok) break;
+      const st = resp.status;
+      let msg = "";
+      try{ const j = await resp.json(); msg = (j && j.error && j.error.message) || ""; }catch(_){}
+      lastErrDetail = `HTTP ${st}${msg ? " · " + msg.slice(0, 90) : ""}`;
+      if(st === 401) throw Object.assign(new Error(lastErrDetail), {code:"invalid_key", detail:lastErrDetail});
+      // If previous_interaction_id failed (expired or model switched), clear it and retry once on same model
+      if(prevId && (st === 400 || st === 404) && attempt === 0){ prevId = null; continue; }
+      // Transient overload: retry once briefly before stepping down to fallback model
+      if((st === 500 || st === 502 || st === 503 || st === 504) && attempt === 0){ await sleep(800); continue; }
+      // Step down to next fallback model on model access/quota/overload errors
+      if([403, 404, 429, 500, 502, 503, 504].includes(st)) break;
+      throw Object.assign(new Error(lastErrDetail), {code: st === 400 || st === 413 ? "prompt_too_large" : "network", detail:lastErrDetail});
     }
-    if(resp.ok || !(resp.status === 404 || resp.status === 403) || ci === candidates.length - 1) break;
+    if(resp && resp.ok) break;
   }
-  if(!resp.ok){
-    const st = resp.status;
-    if(st === 401 || st === 403) throw Object.assign(new Error("auth"), {code:"invalid_key"});
-    if(st === 429) throw Object.assign(new Error("rate"), {code:"rate_limited"});
-    if(st === 400 || st === 413) throw Object.assign(new Error("bad"), {code:"prompt_too_large"});
-    throw Object.assign(new Error("http " + st), {code:"network"});
+  if(!resp || !resp.ok){
+    const st = resp ? resp.status : 0;
+    if(st === 401 || st === 403) throw Object.assign(new Error(lastErrDetail), {code:"invalid_key", detail:lastErrDetail});
+    if(st === 429) throw Object.assign(new Error(lastErrDetail), {code:"rate_limited", detail:lastErrDetail});
+    if(st === 400 || st === 413) throw Object.assign(new Error(lastErrDetail), {code:"prompt_too_large", detail:lastErrDetail});
+    throw Object.assign(new Error(lastErrDetail || "network"), {code:"network", detail:lastErrDetail});
   }
   const reader = resp.body.getReader(), dec = new TextDecoder();
-  let buf = "", acc = "", iid = opts.prevId || null, truncated = false;
+  let buf = "", acc = "", iid = prevId || null, truncated = false;
+  const handleLine = line => {
+    if(!line.startsWith("data:")) return;
+    const raw = line.slice(5).trim();
+    if(!raw || raw === "[DONE]") return;
+    let ev; try{ ev = JSON.parse(raw); }catch(_){ return; }
+    if(ev.interaction && ev.interaction.id) iid = ev.interaction.id;
+    const isDelta = ev.event_type === "step.delta" || ev.event_type === "content.delta";
+    if(isDelta && ev.delta && ev.delta.type === "text" && ev.delta.text){
+      acc += ev.delta.text;
+      if(opts.onText) opts.onText({text: acc});
+    } else if((ev.event_type === "interaction.completed" || ev.event_type === "interaction.complete") && ev.interaction){
+      if(ev.interaction.status === "incomplete") truncated = true;
+    } else if(ev.event_type === "error"){
+      const em = (ev.error && ev.error.message) || "스트림 오류";
+      throw Object.assign(new Error(em), {code:"network", text:acc, detail:em});
+    }
+  };
   try{
     while(true){
       const {value, done} = await reader.read();
       if(done) break;
       buf += dec.decode(value, {stream:true});
       const lines = buf.split(/\r?\n/); buf = lines.pop() || "";
-      for(const line of lines){
-        if(!line.startsWith("data:")) continue;
-        const raw = line.slice(5).trim();
-        if(!raw || raw === "[DONE]") continue;
-        let ev; try{ ev = JSON.parse(raw); }catch(_){ continue; }
-        if(ev.interaction && ev.interaction.id) iid = ev.interaction.id;
-        if(ev.event_type === "step.delta" && ev.delta && ev.delta.type === "text" && ev.delta.text){
-          acc += ev.delta.text;
-          if(opts.onText) opts.onText({text: acc});
-        } else if(ev.event_type === "interaction.completed" && ev.interaction){
-          if(ev.interaction.status === "incomplete") truncated = true;
-        } else if(ev.event_type === "error"){
-          throw Object.assign(new Error((ev.error && ev.error.message) || "error"), {code:"network", text:acc});
-        }
-      }
+      for(const line of lines) handleLine(line);
     }
+    if(buf.trim()) handleLine(buf);
   }catch(e){
-    if(e && e.name === "AbortError") throw Object.assign(new Error("cancelled"), {code:"cancelled", text:acc});
+    if(e && (e.name === "AbortError" || e.code === "cancelled")) throw Object.assign(new Error("cancelled"), {code:"cancelled", text:acc});
     throw e;
   }
   if(!acc.trim()) throw Object.assign(new Error("empty"), {code:"empty_completion"});
@@ -2204,7 +2229,7 @@ async function askTutor(text){
     if(e && e.text) TUTOR.turns.push({role:"assistant", content:e.text + (code==="cancelled"?"\n(중지됨)":"")});
     else if(code !== "refused") TUTOR.turns.pop();       // keep the question box clean when nothing came back
     if(["not_granted","sampling_disabled","not_declared","capability_disabled","capability_removed"].includes(code)){ TUTOR.off = true; if(route.name !== "quiz") render(); }
-    else if(code !== "cancelled") TUTOR.err = TUTOR_ERR[code] || "연결이 잠시 불안정했어요. 다시 보내 주세요.";
+    else if(code !== "cancelled") TUTOR.err = (TUTOR_ERR[code] || "연결이 잠시 불안정했어요. 다시 보내 주세요.") + (e && e.detail ? ` (${e.detail})` : "");
   }finally{
     if(TUTOR.key === myQ){ TUTOR.busy = false; TUTOR.pending = ""; TUTOR.ctl = null; }
   }
