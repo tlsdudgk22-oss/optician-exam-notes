@@ -2079,7 +2079,7 @@ function renderTutor(){
       ${TUTOR.busy?`<div class="trow"><img class="tavatar" src="fig/tutor_avatar.png" alt=""><div class="tmsg a ${TUTOR.pending?"":"wait"}" id="tutorPending">${TUTOR.pending?fmtTutor(TUTOR.pending):(TUTOR.imgBusy?"그림을 그리는 중… (5~10초)":"생각하는 중…")}</div></div>`:""}
       ${TUTOR.err?`<div class="tnote" style="color:var(--bad)">${esc(TUTOR.err)}</div>`:""}</div>
     <div class="tinput"><textarea id="tutorBox" rows="2" ${!hasKey?"disabled":""} placeholder="${!hasKey ? "위에서 Gemini API 키를 먼저 저장해 주세요" : (q ? "이 문제" : T.kind === "tip" ? "이 비법" : T.sel ? "고른 부분" : "이 강의") + "에 대해 무엇이든 물어보세요 (Enter 전송, Shift+Enter 줄바꿈)"}"></textarea>
-      ${TUTOR.busy?`<button class="btn" type="button" id="tutorStop">중지</button>`:`${!window.WEB?`<button class="btn" type="button" id="tutorImgBtn" ${!hasKey?"disabled":""} title="현재 개념이나 입력한 내용을 그림으로 생성">그림 생성</button>`:""}<button class="btn pri" type="button" id="tutorSend" ${!hasKey?"disabled":""}>보내기</button>`}</div>
+      ${TUTOR.busy?`<button class="btn" type="button" id="tutorStop">중지</button>`:`<button class="btn pri" type="button" id="tutorSend" ${!hasKey?"disabled":""}>보내기</button>`}</div>
     <div class="tnote">${window.WEB ? "답변은 내 claude.ai 사용량을 써요." : "답변은 내 Gemini API 키로 Google 서버에 직접 요청돼요(인터넷 필요)."} 시험 직전엔 공식 해설과 함께 확인하세요.</div>`;
   const kt = document.getElementById("tutorKeyToggle");
   if(kt) kt.onclick = ()=>{ TUTOR.editKey = !TUTOR.editKey; renderTutor(); };
@@ -2091,7 +2091,6 @@ function renderTutor(){
   const ta = document.getElementById("tutorBox");
   ta.onkeydown = e=>{ if(e.key==="Enter" && !e.shiftKey && !e.isComposing){ e.preventDefault(); askTutor(ta.value); } };
   const send = document.getElementById("tutorSend"); if(send) send.onclick = ()=>askTutor(ta.value);
-  const imgBtn = document.getElementById("tutorImgBtn"); if(imgBtn) imgBtn.onclick = ()=>askTutor(ta.value.trim() || IMG_ASK, {image:true});
   const stop = document.getElementById("tutorStop"); if(stop) stop.onclick = ()=>TUTOR.ctl && TUTOR.ctl.abort();
 }
 const TUTOR_ERR = {
@@ -2255,7 +2254,7 @@ async function askTutor(text, opts={}){
   if(window.WEB && !SAMPLE) return;
   if(!window.WEB && !getGeminiKey()){ TUTOR.editKey = true; renderTutor(); return; }
   tutorFor(T);
-  const wantImage = !window.WEB && (opts.image || text === IMG_ASK);
+  const wantImage = !window.WEB && (opts.image || text === IMG_ASK || /(?:그림|이미지|일러스트|도해).*(?:그려|생성|만들|보여|설명)|그려\s*줘/.test(text));
   TUTOR.turns.push({role:"user", content:text});
   TUTOR.busy = true; TUTOR.imgBusy = wantImage; TUTOR.pending = ""; TUTOR.err = "";
   TUTOR.ctl = new AbortController();
