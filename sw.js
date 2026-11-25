@@ -1,7 +1,8 @@
-const CACHE_NAME = "optician-pwa-v10";
+const CACHE_NAME = "optician-pwa-v11";
 const CORE_ASSETS = [
   "./",
   "./index.html",
+  "./data.js",
   "./manifest.webmanifest",
   "./fonts/PretendardVariable.woff2",
   "./fig/tutor_avatar.png",

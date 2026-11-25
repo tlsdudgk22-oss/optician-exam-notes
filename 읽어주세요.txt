@@ -3,7 +3,7 @@
 [1. 여는 법]
 - 간편 실행: index.html 을 더블클릭하면 브라우저에서 바로 열립니다.
 - 데스크톱 앱(PWA) 설치 실행: 앱_실행.bat 을 더블클릭하면 로컬 서버(http://127.0.0.1:8765)로 열리며, 크롬·엣지 왼쪽 메뉴 하단의 '앱으로 설치' 버튼 또는 주소창 설치 아이콘으로 데스크톱 앱처럼 설치할 수 있습니다.
-- img / fig / fonts / icons / manifest.webmanifest / sw.js 파일을 index.html 과 같은 폴더에 그대로 두어야 그림과 앱 설치 기능이 정상 동작합니다.
+- data.js / img / fig / fonts / icons / manifest.webmanifest / sw.js 파일을 index.html 과 같은 폴더에 그대로 두어야 데이터·그림과 앱 설치 기능이 정상 동작합니다.
 
 [2. 모바일 앱(PWA)으로 설치하는 법]
 - 이 폴더 전체를 GitHub Pages, Cloudflare Pages, Netlify 같은 무료 HTTPS 정적 호스팅에 올린 뒤 휴대폰 브라우저에서 접속하세요.
