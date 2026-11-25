@@ -351,6 +351,7 @@ button.tile:active{transform:scale(.99)}
 .tmsg{padding:12px 16px;font-size:16px;line-height:1.75;max-width:100%;overflow-wrap:anywhere;min-width:0;border-radius:0}
 .tmsg.u{align-self:flex-end;background:var(--ink);color:var(--on-brand);max-width:85%;}
 .tmsg.a{align-self:flex-start;background:var(--surface2);}
+.timg{display:block;max-width:100%;max-height:420px;border-radius:12px;margin-top:8px;cursor:zoom-in;background:#fff}
 .tmsg.wait{color:var(--muted)}
 .tinput{display:flex;gap:8px;align-items:flex-end}
 .tinput textarea{flex:1;min-width:0;resize:vertical;min-height:48px;max-height:180px;padding:11px 15px}
@@ -1916,8 +1917,8 @@ const TIERS = window.WEB
 const tierInfo = id => TIERS.find(t=>t.id===id) || TIERS[1];
 const tierModel = id => tierInfo(id).model;
 let TUTOR_TIER = window.WEB ? "default" : "quick";
-try{ const t = localStorage.getItem("optician-tutor-tier"); if(TIERS.some(x=>x.id===t)) TUTOR_TIER = t; }catch(e){}
-function setTier(id){ TUTOR_TIER = id; try{ localStorage.setItem("optician-tutor-tier", id); }catch(e){} renderTutor(); }
+try{ const t = localStorage.getItem("optician-tutor-tier-v2"); if(TIERS.some(x=>x.id===t)) TUTOR_TIER = t; }catch(e){}
+function setTier(id){ TUTOR_TIER = id; try{ localStorage.setItem("optician-tutor-tier-v2", id); }catch(e){} renderTutor(); }
 const GEMINI_KEY_STORAGE = "optician-gemini-key";
 function getGeminiKey(){ try{ return (localStorage.getItem(GEMINI_KEY_STORAGE)||"").trim(); }catch(e){ return ""; } }
 function saveGeminiKey(val){
@@ -1928,6 +1929,8 @@ function saveGeminiKey(val){
   toast(k ? "Gemini API 키를 이 브라우저에 저장했어요" : "Gemini API 키를 삭제했어요");
 }
 const DRILL_ASK = "비슷한 문제 하나 만들어줘";
+const IMG_ASK = "그림으로 설명해줘";
+const IMG_MODELS = ["gemini-nano-banana-2.1", "gemini-3.1-flash-lite-image", "gemini-3-pro-image"];
 const tutorOK = () => window.WEB ? !!(SAMPLE && !TUTOR.off) : !TUTOR.off;
 // what the tutor is about right now: the open question, or the 비법 card / lecture part it was opened on
 function tutorTarget(){
@@ -2049,11 +2052,11 @@ function renderTutor(){
     ? [...CIRC.map(c=>({label:c, q:`${c}번이 답인 것 같아. 채점해줘.`})), {label:"정답 보기", q:"모르겠어. 정답과 해설을 알려줘."}]
     : (q
       ? (revealed
-        ? ["왜 이게 정답이야?", ...(QZ.sel[q.id] && QZ.sel[q.id]!==q.answer ? ["내가 고른 답은 왜 틀렸어?"] : []), "더 쉽게 설명해줘", "외우는 요령 알려줘", DRILL_ASK]
+        ? ["왜 이게 정답이야?", ...(QZ.sel[q.id] && QZ.sel[q.id]!==q.answer ? ["내가 고른 답은 왜 틀렸어?"] : []), "더 쉽게 설명해줘", "외우는 요령 알려줘", ...(!window.WEB ? [IMG_ASK] : []), DRILL_ASK]
         : ["힌트만 줘", "관련 개념 설명해줘", "어떻게 접근해야 해?"])
       : T.kind === "tip"
-        ? ["쉽게 다시 설명해줘", "왜 이렇게 되는지 알려줘", "예제 하나 더 풀어줘", DRILL_ASK]
-        : ["쉽게 다시 설명해줘", "예시 하나 들어줘", "헷갈리는 개념과 비교해줘", DRILL_ASK]).map(c=>({label:c, q:c}));
+        ? ["쉽게 다시 설명해줘", "왜 이렇게 되는지 알려줘", "예제 하나 더 풀어줘", ...(!window.WEB ? [IMG_ASK] : []), DRILL_ASK]
+        : ["쉽게 다시 설명해줘", "예시 하나 들어줘", "헷갈리는 개념과 비교해줘", ...(!window.WEB ? [IMG_ASK] : []), DRILL_ASK]).map(c=>({label:c, q:c}));
   const badge = q ? (revealed ? ["brand", "해설 모드"] : ["warn", "힌트 모드 · 정답은 말하지 않아요"]) : ["brand", T.kind === "tip" ? "이 비법 카드" : T.sel ? "고른 부분" : "이 강의"];
   const hasKey = window.WEB || !!getGeminiKey();
   const showKeyBox = !window.WEB && (!hasKey || TUTOR.editKey);
@@ -2072,11 +2075,11 @@ function renderTutor(){
     ${T.sel ? `<div class="tsel">“${esc(T.sel.length > 160 ? T.sel.slice(0, 160) + "…" : T.sel)}”</div>` : ""}
     ${TUTOR.drill && !TUTOR.busy ? `<div class="tnote">연습 문제의 답을 골라 보세요. 고르기 전엔 정답을 알려주지 않아요.</div>` : ""}
     <div class="tchips ${TUTOR.drill?"drill":""}">${chips.map(c=>`<button type="button" ${TUTOR.busy||!hasKey?"disabled":""} data-q="${esc(c.q)}">${esc(c.label)}</button>`).join("")}</div>
-    <div class="tlog">${TUTOR.turns.map(t=>t.role==="user"?`<div class="tmsg u">${esc(t.content)}</div>`:`<div class="trow"><img class="tavatar" src="fig/tutor_avatar.png" alt=""><div class="tcol"><div class="tmsg a">${fmtTutor(t.content)}</div>${t.tier?`<span class="tby">${t.used ? esc(t.used) : tierModel(t.tier)} 답변${t.req && t.req!==t.tier?` · 요청한 ${tierModel(t.req)} 대신 요금제에 맞춰 자동 선택`:""}</span>`:""}</div></div>`).join("")}
-      ${TUTOR.busy?`<div class="trow"><img class="tavatar" src="fig/tutor_avatar.png" alt=""><div class="tmsg a ${TUTOR.pending?"":"wait"}" id="tutorPending">${TUTOR.pending?fmtTutor(TUTOR.pending):"생각하는 중…"}</div></div>`:""}
+    <div class="tlog">${TUTOR.turns.map(t=>t.role==="user"?`<div class="tmsg u">${esc(t.content)}</div>`:`<div class="trow"><img class="tavatar" src="fig/tutor_avatar.png" alt=""><div class="tcol"><div class="tmsg a">${t.content ? fmtTutor(t.content) : ""}${(t.imgs||[]).map(u=>`<img class="timg" src="${u}" alt="AI 튜터 생성 그림" onclick="window.open(this.src,'_blank')">`).join("")}</div>${t.tier||t.used?`<span class="tby">${t.used ? esc(t.used) : tierModel(t.tier)} 답변${t.req && t.req!==t.tier?` · 요청한 ${tierModel(t.req)} 대신 요금제에 맞춰 자동 선택`:""}</span>`:""}</div></div>`).join("")}
+      ${TUTOR.busy?`<div class="trow"><img class="tavatar" src="fig/tutor_avatar.png" alt=""><div class="tmsg a ${TUTOR.pending?"":"wait"}" id="tutorPending">${TUTOR.pending?fmtTutor(TUTOR.pending):(TUTOR.imgBusy?"그림을 그리는 중… (5~10초)":"생각하는 중…")}</div></div>`:""}
       ${TUTOR.err?`<div class="tnote" style="color:var(--bad)">${esc(TUTOR.err)}</div>`:""}</div>
     <div class="tinput"><textarea id="tutorBox" rows="2" ${!hasKey?"disabled":""} placeholder="${!hasKey ? "위에서 Gemini API 키를 먼저 저장해 주세요" : (q ? "이 문제" : T.kind === "tip" ? "이 비법" : T.sel ? "고른 부분" : "이 강의") + "에 대해 무엇이든 물어보세요 (Enter 전송, Shift+Enter 줄바꿈)"}"></textarea>
-      ${TUTOR.busy?`<button class="btn" type="button" id="tutorStop">중지</button>`:`<button class="btn pri" type="button" id="tutorSend" ${!hasKey?"disabled":""}>보내기</button>`}</div>
+      ${TUTOR.busy?`<button class="btn" type="button" id="tutorStop">중지</button>`:`${!window.WEB?`<button class="btn" type="button" id="tutorImgBtn" ${!hasKey?"disabled":""} title="현재 개념이나 입력한 내용을 그림으로 생성">그림 생성</button>`:""}<button class="btn pri" type="button" id="tutorSend" ${!hasKey?"disabled":""}>보내기</button>`}</div>
     <div class="tnote">${window.WEB ? "답변은 내 claude.ai 사용량을 써요." : "답변은 내 Gemini API 키로 Google 서버에 직접 요청돼요(인터넷 필요)."} 시험 직전엔 공식 해설과 함께 확인하세요.</div>`;
   const kt = document.getElementById("tutorKeyToggle");
   if(kt) kt.onclick = ()=>{ TUTOR.editKey = !TUTOR.editKey; renderTutor(); };
@@ -2088,6 +2091,7 @@ function renderTutor(){
   const ta = document.getElementById("tutorBox");
   ta.onkeydown = e=>{ if(e.key==="Enter" && !e.shiftKey && !e.isComposing){ e.preventDefault(); askTutor(ta.value); } };
   const send = document.getElementById("tutorSend"); if(send) send.onclick = ()=>askTutor(ta.value);
+  const imgBtn = document.getElementById("tutorImgBtn"); if(imgBtn) imgBtn.onclick = ()=>askTutor(ta.value.trim() || IMG_ASK, {image:true});
   const stop = document.getElementById("tutorStop"); if(stop) stop.onclick = ()=>TUTOR.ctl && TUTOR.ctl.abort();
 }
 const TUTOR_ERR = {
@@ -2187,15 +2191,73 @@ async function geminiSample(systemInstruction, userText, opts){
   if(!acc.trim()) throw Object.assign(new Error("empty"), {code:"empty_completion"});
   return {text: acc, truncated, modelTierApplied: opts.modelTier, interactionId: iid, usedModel};
 }
-async function askTutor(text){
+async function geminiImageSample(contextText, userReq, opts){
+  const key = getGeminiKey();
+  if(!key) throw Object.assign(new Error("missing key"), {code:"invalid_key"});
+  if(typeof navigator !== "undefined" && navigator.onLine === false) throw Object.assign(new Error("offline"), {code:"offline"});
+  const prompt = [
+    "한국 안경사 국가시험 수험생을 위한 깔끔하고 이해하기 쉬운 교육용 컬러 일러스트(도해) 1장을 그려줘.",
+    "- 밝고 깔끔한 교과서/인포그래픽 스타일, 핵심 구조·광선 방향·부위 명칭이 한눈에 보이게 구성해.",
+    "- 이미지 속 텍스트 라벨은 짧고 선명한 한국어(필요시 영문 약어 병기)로 최소화하고, 그림과 함께 2~4문장의 짧은 한국어 설명도 같이 적어줘.",
+    "",
+    "[참고 학습 내용]",
+    contextText.slice(0, 1800),
+    "",
+    "[학생 요청]",
+    userReq
+  ].join("\n");
+
+  let resp = null, usedModel = IMG_MODELS[0], lastErrDetail = "";
+  for(let ci = 0; ci < IMG_MODELS.length; ci++){
+    usedModel = IMG_MODELS[ci];
+    try{
+      resp = await fetch("https://generativelanguage.googleapis.com/v1/interactions", {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "x-goog-api-key": key},
+        body: JSON.stringify({model: usedModel, input: prompt}),
+        signal: opts.signal,
+      });
+    }catch(e){
+      if(e && e.name === "AbortError") throw Object.assign(new Error("cancelled"), {code:"cancelled"});
+      lastErrDetail = "네트워크 응답 없음"; resp = null; break;
+    }
+    if(resp.ok) break;
+    const st = resp.status;
+    let msg = "";
+    try{ const j = await resp.json(); msg = (j && j.error && j.error.message) || ""; }catch(_){}
+    lastErrDetail = `HTTP ${st}${msg ? " · " + msg.slice(0, 90) : ""}`;
+    if(st === 401) throw Object.assign(new Error(lastErrDetail), {code:"invalid_key", detail:lastErrDetail});
+    if([403, 404, 429, 500, 502, 503, 504].includes(st)) continue;
+    break;
+  }
+  if(!resp || !resp.ok){
+    const st = resp ? resp.status : 0;
+    if(st === 401 || st === 403) throw Object.assign(new Error(lastErrDetail), {code:"invalid_key", detail:lastErrDetail});
+    if(st === 429) throw Object.assign(new Error(lastErrDetail), {code:"rate_limited", detail:lastErrDetail});
+    throw Object.assign(new Error(lastErrDetail || "network"), {code:"network", detail:lastErrDetail});
+  }
+  const data = await resp.json();
+  const texts = [], imgs = [];
+  const collect = item => {
+    if(!item) return;
+    if(item.type === "text" && item.text) texts.push(item.text);
+    else if(item.type === "image" && item.data) imgs.push(`data:${item.mime_type || "image/png"};base64,${item.data}`);
+  };
+  for(const step of (data.steps || [])) for(const c of (step.content || [])) collect(c);
+  for(const o of (data.outputs || [])) collect(o);
+  if(!imgs.length && !texts.length) throw Object.assign(new Error("empty"), {code:"empty_completion"});
+  return {text: texts.join("\n").trim(), imgs, usedModel};
+}
+async function askTutor(text, opts={}){
   text = (text||"").trim();
   const T = tutorTarget();
   if(!text || !T || TUTOR.busy) return;
   if(window.WEB && !SAMPLE) return;
   if(!window.WEB && !getGeminiKey()){ TUTOR.editKey = true; renderTutor(); return; }
   tutorFor(T);
+  const wantImage = !window.WEB && (opts.image || text === IMG_ASK);
   TUTOR.turns.push({role:"user", content:text});
-  TUTOR.busy = true; TUTOR.pending = ""; TUTOR.err = "";
+  TUTOR.busy = true; TUTOR.imgBusy = wantImage; TUTOR.pending = ""; TUTOR.err = "";
   TUTOR.ctl = new AbortController();
   const myQ = T.key;
   renderTutor();
@@ -2213,6 +2275,9 @@ async function askTutor(text){
         cache:false, signal:TUTOR.ctl.signal, modelTier:asked,
         onText: ({text})=>{ if(TUTOR.key!==myQ) return; TUTOR.pending = text; const el = document.getElementById("tutorPending"); if(el){ el.classList.remove("wait"); el.innerHTML = fmtTutor(text); } },
       });
+    } else if(wantImage){
+      const ctx = T.q ? tutorContext(T.q, T.revealed) : studyContext(T);
+      r = await geminiImageSample(ctx, text, {signal:TUTOR.ctl.signal});
     } else {
       r = await geminiSample(sysText, text, {
         signal:TUTOR.ctl.signal, modelTier:asked, prevId:TUTOR.iid,
@@ -2221,7 +2286,7 @@ async function askTutor(text){
       if(r.interactionId) TUTOR.iid = r.interactionId;
     }
     if(TUTOR.key !== myQ) return;
-    TUTOR.turns.push({role:"assistant", content: r.text + (r.truncated ? "\n(답변이 길어서 중간에 끊겼어요. 나눠서 물어봐 주세요.)" : ""), tier:r.modelTierApplied||asked, req:asked, used:r.usedModel||""});
+    TUTOR.turns.push({role:"assistant", content: (r.text||"") + (r.truncated ? "\n(답변이 길어서 중간에 끊겼어요. 나눠서 물어봐 주세요.)" : ""), imgs:r.imgs||[], tier:r.modelTierApplied||"", req:wantImage?"":asked, used:r.usedModel||""});
     TUTOR.drill = startsDrill;
   }catch(e){
     if(TUTOR.key !== myQ) return;
@@ -2231,7 +2296,7 @@ async function askTutor(text){
     if(["not_granted","sampling_disabled","not_declared","capability_disabled","capability_removed"].includes(code)){ TUTOR.off = true; if(route.name !== "quiz") render(); }
     else if(code !== "cancelled") TUTOR.err = (TUTOR_ERR[code] || "연결이 잠시 불안정했어요. 다시 보내 주세요.") + (e && e.detail ? ` (${e.detail})` : "");
   }finally{
-    if(TUTOR.key === myQ){ TUTOR.busy = false; TUTOR.pending = ""; TUTOR.ctl = null; }
+    if(TUTOR.key === myQ){ TUTOR.busy = false; TUTOR.imgBusy = false; TUTOR.pending = ""; TUTOR.ctl = null; }
   }
   renderTutor();
   const box = document.getElementById("tutorBox"); if(box && TUTOR.key === myQ) box.focus({preventScroll:true});
